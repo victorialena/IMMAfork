@@ -14,12 +14,14 @@ from tqdm import tqdm
 import pdb
 
 from models.modules import mlp
+
 from utils import get_n_params, set_random_seeds
 from utils import get_graph_from_list, get_graph_from_label
 from utils import get_graph_accuracy, get_device
 from utils import get_output_dir
 from utils import total_correlation
-from data_utils.load_dataset import prepare_dataset
+
+from prepare_dataset import prepare_dataset
 from losses import calc_loss, min_ade, min_fde
 
 def evaluate(model, generator, args, scaling=None):
