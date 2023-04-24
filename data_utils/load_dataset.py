@@ -189,7 +189,7 @@ def prepare_dataset(args):
 
     elif args.env == 'bball':
         all_data = np.load('./datasets/all_data.npz.npy')
-        dataset_size = 300000
+
         x_min, x_max = all_data[:, :, :, 0].min(), all_data[:, :, :, 0].max()
         y_min, y_max = all_data[:, :, :, 1].min(), all_data[:, :, :, 1].max()
         scaling = [x_max, x_min, y_max, y_min]
@@ -197,24 +197,21 @@ def prepare_dataset(args):
         all_data[..., 1] = (all_data[..., 1] - y_min)/(y_max - y_min)
         all_data[..., 5:, 3] = 1.
         all_data[..., -1, 2:] = 1.
-        all_data = all_data[:dataset_size, ...]
+        all_data = all_data[:args.dataset_size, ...]
 
-        print('loaded all_data')
-        all_data, all_labels = all_data[:, :24, :, :], all_data[:, 24:, :, :]
+        print('loaded all_data:', args.obs_frames)
+        all_data, all_labels = all_data[:, :args.obs_frames, :, :], all_data[:, args.obs_frames:, :, :]
         all_data = torch.FloatTensor(all_data)
         all_labels = torch.FloatTensor(all_labels)
     else:
         assert False
 
-    # all_data = all_data[:, -args.obs_frames:, ...]
     all_data = all_data[:, -args.obs_frames:, ...]
-    # all_data = all_data.to(args.device)
-    # all_labels = all_labels.to(args.device)
-    # print('push entire dataset to {}'.format(args.device))
+    
     print('data shape', all_data.shape)
     print('labels shape', all_labels.shape)
 
-    dataset = torch.utils.data.TensorDataset(all_data, all_labels) # create your datset
+    dataset = torch.utils.data.TensorDataset(all_data, all_labels) # create your dataset
     train_size = int(len(dataset) * 0.8)
     val_size = int(len(dataset) * 0.1)
     test_size = len(dataset) - train_size - val_size
@@ -287,11 +284,11 @@ def prepare_dataset(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('')
-    parser.add_argument('--env', type=str, default='socialnav', choices=['socialnav', 'phase', 'bball'])
+    parser.add_argument('--env', type=str, default='bball', choices=['socialnav', 'phase', 'bball'])
     parser.add_argument('--config', type=str, default='configs/default.py')
-    parser.add_argument('--dataset_size', type=int, default=100000)
-    parser.add_argument('--randomseed', type=int, default=17)
-    parser.add_argument('--obs_frames', type=int, default=24)
+    parser.add_argument('--dataset_size', type=int, default=300000)
+    parser.add_argument('--randomseed', type=int, default=42)
+    parser.add_argument('--obs_frames', type=int, default=40)
     parser.add_argument('--rollouts', type=int, default=10)
     args = parser.parse_args()
     prepare_dataset(args)

@@ -12,6 +12,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from models.modules import *
 
+import pdb
+
 
 class IMMA(nn.Module):
     def __init__(self, args):
@@ -109,7 +111,12 @@ class IMMA(nn.Module):
                                   encoder=None,
                                   burn_in=self.args.burn_in,
                                   burn_in_steps=self.obs_frames)
-        ret = []
+
+        # pred = self.out_fc3(output)
+        # pred = torch.cumsum(pred, dim=-1)
+        # return batch_data[:, :, -1, :self.human_state_dim] + pred, pred_graphs
+
+        ret = []    
         for step in range(rollouts):
             pred = self.out_fc3(output[:, :, step, :])
             if step == 0:

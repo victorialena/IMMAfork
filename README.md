@@ -46,7 +46,7 @@ The preprocessed dataset is under `datasets/phase/collab`.
 To load the dataset, refer to the function *prepare_dataset* in `data_utils/load_dataset.py`.
 
 #### NBA dataset ####
-Download the preprocessed dataset [here](https://drive.google.com/file/d/1eJbDHy3fOHfzOStf-jSuYCz_YQloQU3s/view?usp=sharing) (or run `gdown 1eJbDHy3fOHfzOStf-jSuYCz_YQloQU3s`) and place it under `datasets`. 
+Download the preprocessed dataset [here](https://drive.google.com/file/d/1eJbDHy3fOHfzOStf-jSuYCz_YQloQU3s/view?usp=sharing) (or run `gdown 'https://drive.google.com/uc?id=1eJbDHy3fOHfzOStf-jSuYCz_YQloQU3s'`) and place it under `datasets`. 
 Alternatively, you can create your own dataset from raw sportVU logs (refer to [this repository](https://github.com/linouk23/NBA-Player-Movements) or the code under `data_utils/bball`)
 To load the dataset, refer to the function *prepare_dataset* in `data_utils/load_dataset.py`.
 

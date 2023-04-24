@@ -3,6 +3,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 from utils import logsumexp
 
+
+def min_ade(target, recons):
+    """ ADE = 1/T * sum(sqrt(dx_i^2 + dy_i^2))
+        |target| = [bs, T, n_vars, d]
+    """
+    assert target.dim() == 4
+    ade = torch.pow(target-recons, 2).sum(-1).sqrt().mean(1).mean(-1)
+    return ade.min()
+
+
+def min_fde(target, recons):
+    """ FDE = sqrt(dx_T^2 + dy_T^2)
+        |target| = [bs, T, n_vars, d]
+    """
+    assert target.dim() == 4
+    fde = torch.pow(target[:, -1]-recons[:, -1], 2).sum(-1).sqrt().mean(-1)
+    return fde.min()
+
+
 def l1_regularizer(model, lambda_l1=0.1):
     lossl1 = 0
     for model_param_name, model_param_value in model.named_parameters():

@@ -11,6 +11,8 @@ import torch.nn.functional as F
 import wandb
 from tqdm import tqdm
 
+import pdb
+
 from models.modules import mlp
 from utils import get_n_params, set_random_seeds
 from utils import get_graph_from_list, get_graph_from_label
@@ -18,7 +20,7 @@ from utils import get_graph_accuracy, get_device
 from utils import get_output_dir
 from utils import total_correlation
 from data_utils.load_dataset import prepare_dataset
-from losses import calc_loss
+from losses import calc_loss, min_ade, min_fde
 
 def evaluate(model, generator, args, scaling=None):
     device = args.device
@@ -26,17 +28,18 @@ def evaluate(model, generator, args, scaling=None):
         x_max, x_min, y_max, y_min = scaling
 
     model.eval()
-    tot = [0. for _ in range(args.rollouts+1)]
 
-    tmpa, tmpb = [], []
+    ade, fde, mse = [], [], []
     for batch_data, batch_label in tqdm(generator):
         batch_graph = None
         if args.gt:
             batch_graph = batch_label[:, 0, :, -args.num_humans:]
         batch_data = batch_data.to(device)
         batch_label = batch_label[:, :, :args.num_humans, :args.feat_dim].to(device)
-        preds = model.multistep_forward(batch_data[:, -args.obs_frames:, ...],
-                                        batch_graph, args.rollouts)
+        with torch.no_grad():
+            preds = model.multistep_forward(batch_data[:, -args.obs_frames:, ...], 
+                                            batch_graph, args.rollouts)
+            
         if scaling:
             constant = 0.3048 if args.env == 'bball' else 1.
             for i in range(args.rollouts):
@@ -45,16 +48,13 @@ def evaluate(model, generator, args, scaling=None):
                 preds[i][-1][..., 0] = (preds[i][-1][..., 0] * (x_max - x_min) + x_min) * constant
                 preds[i][-1][..., 1] = (preds[i][-1][..., 1] * (y_max - y_min) + y_min) * constant
 
-        pos_losses = [(torch.sqrt(((batch_label[:, i, ..., :2] - preds[i][-1][..., :2])**2).sum(dim=-1))).sum().item()/args.num_humans for i in range(args.rollouts)]
+        _preds, _labels = torch.stack([p[-1] for p in preds]).transpose(0,1)[..., :2], batch_label[..., :2]
 
-        for j in range(args.rollouts):
-            tot[j] += pos_losses[j]
-            tot[-1] += pos_losses[j] / args.rollouts
+        mse.append(F.mse_loss(_preds, _labels).item())
+        ade.append(min_ade(_preds, _labels).item())
+        fde.append(min_fde(_preds, _labels).item())
 
-    for j in range(len(tot)):
-        tot[j] = tot[j] / len(generator.dataset)
-
-    return tot
+    return np.mean(mse), min(ade), min(fde)
 
 def main(args):
     args.device = device = get_device(args)
@@ -88,14 +88,18 @@ def main(args):
 
     model = model.to(device)
     print('put model to device {}'.format(device))
+    
     n_params = get_n_params(model)
     print('# parameters: {}'.format(n_params))
+    
     graph_acc = get_graph_accuracy(model, test_generator, args)
     print('test graph_acc before trianing:', graph_acc)
-    val_losses = evaluate(model, val_generator, args, scaling)
-    print('val before training:', val_losses[-1])
-    test_losses = evaluate(model, test_generator, args, scaling)
-    print('test_loss before training:', test_losses[-1])
+    
+    mse_val, ade_val, fde_val = evaluate(model, val_generator, args, scaling)
+    print('(valid) MSE: {}, ADE: {}, FDE {}'.format(mse_val, ade_val, fde_val))
+
+    mse_test, ade_test, fde_test = evaluate(model, test_generator, args, scaling)
+    print('(test) MSE: {}, ADE: {}, FDE {}'.format(mse_test, ade_test, fde_test))
 
     loss_fn = torch.nn.MSELoss()
     kl_loss_fn = torch.nn.KLDivLoss(reduction='batchmean')
@@ -121,7 +125,7 @@ def main(args):
                 for param in model.encoders[jj].parameters():
                     param.requires_grad = False
 
-            for epoch in tqdm(range(1000000000)):
+            for epoch in tqdm(range(args.num_epoch)):
                 model.train()
                 tot_loss = 0.
                 tot_kl_loss = 0.
@@ -134,8 +138,8 @@ def main(args):
                     batch_data = batch_data.to(device)
                     batch_label = batch_label.to(device)
                     if args.gt:
-                        batch_graph = batch_label[:, 0, :, -num_humans:]
-                        assert batch_graph.shape[1] == num_humans
+                        batch_graph = batch_label[:, 0, :, -args.num_humans:]
+                        assert batch_graph.shape[1] == args.num_humans
 
                     preds = model.multistep_forward(batch_data, batch_graph, args.rollouts)
                     losses = calc_loss(preds, batch_label, args)
@@ -152,24 +156,33 @@ def main(args):
                         print('kl loss {:.3f}'.format(tot_kl_loss))
                     if args.plt:
                         print('alpha {:.3f}'.format(model.alpha))
-                    val_losses = evaluate(model, val_generator, args, scaling)
-                    test_losses = evaluate(model, test_generator, args, scaling)
+                    
+
                     graph_acc = get_graph_accuracy(model, test_generator, args)
-                    print('test graph accuracy', np.max(graph_acc))
-                    print('val_losses', val_losses[-1])
+                    print('test graph_acc before trianing:', graph_acc)
+
+                    mse_val, ade_val, fde_val = evaluate(model, val_generator, args, scaling)
+                    print('(valid) MSE: {}, ADE: {}, FDE {}'.format(mse_val, ade_val, fde_val))
+
+                    mse_test, ade_test, fde_test = evaluate(model, test_generator, args, scaling)
+                    print('(test) MSE: {}, ADE: {}, FDE {}'.format(mse_test, ade_test, fde_test))
 
                     if args.use_wandb:
                         logs = {'epoch': epoch,
                                 'graph_accuracy': graph_acc,
-                                'val_loss': val_losses[-1],
-                                'test_loss': test_losses[-1],
+                                'val_mse': mse_val,
+                                'val_ade': ade_val,
+                                'val_fde': fde_val,
+                                'test_mse': mse_test,
+                                'test_ade': ade_test,
+                                'test_fde': fde_test,
                                 'train_loss': tot_loss,
                                  }
                         wandb.log(logs)
 
                     new_best = False
-                    new_best = val_losses[-1] < best_val_loss
-                    new_best_val_loss = val_losses[-1]
+                    new_best = ade_val < best_val_loss
+                    new_best_val_loss = ade_val
 
                     if new_best:
                         print('update best_val {} --> {}'.format(best_val_loss, new_best_val_loss))
@@ -177,7 +190,7 @@ def main(args):
                         torch.save(model, model_saved_name)
                         torch.save(model.state_dict(), weights_saved_name)
                         best_epoch = epoch
-                        test_loss = evaluate(model, test_generator, args, scaling)
+                        mse_test, ade_test, fde_test = evaluate(model, test_generator, args, scaling)
                     elif epoch - best_epoch > 5:
                         scheduler.step()
                         print('learning rate', scheduler.get_last_lr())
@@ -185,7 +198,7 @@ def main(args):
                 if epoch - best_epoch >= 100 or epoch >= args.max_epoch:
                     break
     else:
-        for epoch in tqdm(range(1000000000)):
+        for epoch in tqdm(range(args.num_epoch)):
             model.train()
             tot_loss = 0.
             tot_kl_loss = 0.
@@ -196,9 +209,9 @@ def main(args):
                 batch_data = batch_data.to(device)
                 batch_label = batch_label.to(device)
                 if args.gt:
-                    batch_graph = batch_label[:, 0, :, -num_humans:]
-                    assert batch_graph.shape[1] == num_humans
-
+                    batch_graph = batch_label[:, 0, :, -args.num_humans:]
+                    assert batch_graph.shape[1] == args.num_humans
+                
                 preds = model.multistep_forward(batch_data, batch_graph, args.rollouts)
                 losses = calc_loss(preds, batch_label, args)
 
@@ -212,24 +225,32 @@ def main(args):
                     print('l1 loss {:.3f}'.format(tot_l1_loss))
                 if args.kl:
                     print('kl loss {:.3f}'.format(tot_kl_loss))
-                val_losses = evaluate(model, val_generator, args, scaling)
-                test_losses = evaluate(model, test_generator, args, scaling)
+
                 graph_acc = get_graph_accuracy(model, test_generator, args)
-                print('test graph accuracy', np.max(graph_acc))
-                print('val_losses', val_losses[-1])
+                print('test graph_acc before trianing:', graph_acc)
+
+                mse_val, ade_val, fde_val = evaluate(model, val_generator, args, scaling)
+                print('(valid) MSE: {}, ADE: {}, FDE {}'.format(mse_val, ade_val, fde_val))
+
+                mse_test, ade_test, fde_test = evaluate(model, test_generator, args, scaling)
+                print('(test) MSE: {}, ADE: {}, FDE {}'.format(mse_test, ade_test, fde_test))
 
                 if args.use_wandb:
                     logs = {'epoch': epoch,
                             'graph_accuracy': graph_acc,
-                            'val_loss': val_losses[-1],
-                            'test_loss': test_losses[-1],
+                            'val_mse': mse_val,
+                            'val_ade': ade_val,
+                            'val_fde': fde_val,
+                            'test_mse': mse_test,
+                            'test_ade': ade_test,
+                            'test_fde': fde_test,
                             'train_loss': tot_loss,
-                             }
+                                }
                     wandb.log(logs)
 
                 new_best = False
-                new_best = val_losses[-1] < best_val_loss
-                new_best_val_loss = val_losses[-1]
+                new_best = ade_val[-1] < best_val_loss
+                new_best_val_loss = ade_val[-1]
 
                 if new_best:
                     print('update best_val {} --> {}'.format(best_val_loss, new_best_val_loss))
@@ -237,7 +258,7 @@ def main(args):
                     torch.save(model, model_saved_name)
                     torch.save(model.state_dict(), weights_saved_name)
                     best_epoch = epoch
-                    test_loss = evaluate(model, test_generator, args, scaling)
+                    mse_test, ade_test, fde_test = evaluate(model, test_generator, args, scaling)
                 elif epoch - best_epoch > 5:
                     scheduler.step()
                     print('learning rate', scheduler.get_last_lr())
@@ -253,11 +274,12 @@ def main(args):
 
     graph_acc = get_graph_accuracy(model, test_generator, args)
     print('test graph accuracy', np.max(graph_acc))
-    test_loss = evaluate(model, test_generator, args, scaling)
-    print('test FDE:', test_loss[-2])
-    print('test ADE:', test_loss[-1])
+    
+    mse_test, ade_test, fde_test = evaluate(model, test_generator, args, scaling)
+    
     test_supervised_acc = 0.
-    test_loss_str = ','.join(['{:.4f}'.format(ls) for ls in test_loss])
+    test_loss_str = '(test) MSE: {}, ADE: {}, FDE {}'.format(mse_test, ade_test, fde_test)
+    print(test_loss_str)
 
     if args.log_file:
         with open(args.log_file, 'a+') as f:
@@ -291,7 +313,7 @@ if __name__ == '__main__':
     parser.add_argument('--env', type=str, choices=['socialnav', 'phase', 'bball'])
     parser.add_argument('--dataset_path', type=str, default='')
     parser.add_argument('--model', type=str, default='gat')
-    parser.add_argument('--obs_frames', type=int, default=24)
+    parser.add_argument('--obs_frames', type=int, default=40)
     parser.add_argument('--rollouts', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-6)
     parser.add_argument('--gt', default=False, action='store_true', help='use ground truth graph')
@@ -321,11 +343,15 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', default=0, type=int)
     parser.add_argument('--use_wandb', default=False, action='store_true')
     parser.add_argument('--test_after_every_eval', default=False, action='store_true')
-    parser.add_argument('--randomseed', type=int, default=17)
+    parser.add_argument('--randomseed', type=int, default=42)
     parser.add_argument('--max_epoch', type=int, default=1499)
+    parser.add_argument('--num_epoch', type=int, default=1000000000)
     parser.add_argument('--log_file', type=str, default='./results.log')
+    parser.add_argument('--dataset_size', type=int, default=300000)
 
     args = parser.parse_args()
+    print(args)
+
     if args.use_wandb:
         run = wandb.init(project=args.project_name, reinit=True)
         run.name = '{}:{}_'.format(args.model, args.randomseed) + run.name

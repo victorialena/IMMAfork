@@ -700,9 +700,7 @@ class RNNDecoder(nn.Module):
             else:
                 pred, hidden = self.single_step_forward(ins, rel_rec, rel_send,
                                                         rel_type, hidden)
-
             pred_all.append(pred)
 
         preds = torch.stack(pred_all, dim=1)
-
         return preds.transpose(1, 2).contiguous()
