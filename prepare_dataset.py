@@ -4,6 +4,17 @@ import os
 import random
 import sys
 import torch
+import pdb
+
+def split_fn(dataset, random):
+    N = len(dataset)
+    train_size, val_size = int(0.8*N), int(0.1*N)
+    test_size = N - train_size - val_size
+    if random:
+        return torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
+    return (torch.utils.data.Subset(dataset, range(train_size)),
+            torch.utils.data.Subset(dataset, range(train_size, train_size+val_size)),
+            torch.utils.data.Subset(dataset, range(train_size+val_size, train_size+val_size+test_size)))
 
 
 def prepare_dataset(args):
@@ -14,40 +25,42 @@ def prepare_dataset(args):
             all_data = np.load('./datasets/long_horizon_all_data.npy')
             all_data = all_data[:, ::2]
 
-        x_min, x_max = all_data[:, :, :, 0].min(), all_data[:, :, :, 0].max()
-        y_min, y_max = all_data[:, :, :, 1].min(), all_data[:, :, :, 1].max()
-        scaling = [x_max, x_min, y_max, y_min]
-        all_data[..., 0] = (all_data[..., 0] - x_min)/(x_max - x_min)
-        all_data[..., 1] = (all_data[..., 1] - y_min)/(y_max - y_min)
         all_data[..., 5:, 3] = 1.
         all_data[..., -1, 2:] = 1.
         all_data = all_data[:args.dataset_size, ...]
 
-        print('loaded all_data:', args.obs_frames)
-        all_data, all_labels = all_data[:, :args.obs_frames, :, :], all_data[:, args.obs_frames:, :, :]
-        all_data = torch.FloatTensor(all_data)
-        all_labels = torch.FloatTensor(all_labels)
+    elif args.env == 'springs5':
+        all_data = np.moveaxis(np.load('./datasets/springs5_all_data.npy'), 1, 2)
+        gt_egdes = torch.FloatTensor(np.load('./datasets/springs5_edges.npy'))
     else:
         assert False
 
-    all_data = all_data[:, -args.obs_frames:, ...]
-    
-    print('data shape', all_data.shape)
-    print('labels shape', all_labels.shape)
+    x_min, x_max = all_data[:, :, :, 0].min(), all_data[:, :, :, 0].max()
+    y_min, y_max = all_data[:, :, :, 1].min(), all_data[:, :, :, 1].max()
+    scaling = [x_max, x_min, y_max, y_min]
+    all_data[..., 0] = (all_data[..., 0] - x_min)/(x_max - x_min)
+    all_data[..., 1] = (all_data[..., 1] - y_min)/(y_max - y_min)
 
-    dataset = torch.utils.data.TensorDataset(all_data, all_labels) # create your dataset
-    train_size = int(len(dataset) * 0.8)
-    val_size = int(len(dataset) * 0.1)
-    test_size = len(dataset) - train_size - val_size
+    all_data, all_labels = all_data[:, :args.obs_frames, :, :], all_data[:, args.obs_frames:, :, :]
+    all_data = torch.FloatTensor(all_data)
+    all_labels = torch.FloatTensor(all_labels)
+    
+    # print('loaded all_data:', all_data.size(0))
+    # print('data shape', all_data.shape)
+    # print('labels shape', all_labels.shape)
+
+    dataset = torch.utils.data.TensorDataset(all_data, all_labels, gt_egdes) # create your dataset
+
     torch.cuda.manual_seed_all(args.randomseed)
     torch.manual_seed(args.randomseed)
-    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
+    train_dataset, val_dataset, test_dataset = split_fn(dataset, args.env == 'bball')
 
     # Parameters
     params = {'batch_size': 64,
               'shuffle': True,
               'num_workers': 1,
               'pin_memory': False,
+              'drop_last': True,
               }
     train_generator = torch.utils.data.DataLoader(train_dataset, **params)
     val_generator = torch.utils.data.DataLoader(val_dataset, **params)

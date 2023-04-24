@@ -1,10 +1,6 @@
 import argparse
-import math
 import numpy as np
 import os
-import re
-import shutil
-import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -13,13 +9,9 @@ from tqdm import tqdm
 
 import pdb
 
-from models.modules import mlp
-
 from utils import get_n_params, set_random_seeds
-from utils import get_graph_from_list, get_graph_from_label
 from utils import get_graph_accuracy, get_device
-from utils import get_output_dir
-from utils import total_correlation
+from utils import get_output_dir, print_logs
 
 from prepare_dataset import prepare_dataset
 from losses import calc_loss, min_ade, min_fde
@@ -32,7 +24,7 @@ def evaluate(model, generator, args, scaling=None):
     model.eval()
 
     ade, fde, mse = [], [], []
-    for batch_data, batch_label in tqdm(generator):
+    for batch_data, batch_label, *other_labels in tqdm(generator):
         batch_graph = None
         if args.gt:
             batch_graph = batch_label[:, 0, :, -args.num_humans:]
@@ -41,7 +33,6 @@ def evaluate(model, generator, args, scaling=None):
         with torch.no_grad():
             preds = model.multistep_forward(batch_data[:, -args.obs_frames:, ...], 
                                             batch_graph, args.rollouts)
-            
         if scaling:
             constant = 0.3048 if args.env == 'bball' else 1.
             for i in range(args.rollouts):
@@ -62,14 +53,18 @@ def main(args):
     args.device = device = get_device(args)
     print('using device {}'.format(args.device))
     args.output_dir = get_output_dir(args)
+    os.mkdir(args.output_dir)
     print('output_dir: {}'.format(args.output_dir))
+    log_file = os.path.join(args.output_dir, 'log.txt')
+    log = open(log_file, 'w')
 
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir, exist_ok=True)
 
     set_random_seeds(args.randomseed)
     train_generator, val_generator, test_generator, scaling = prepare_dataset(args)
-    print(len(train_generator.dataset), len(val_generator.dataset), len(test_generator.dataset))
+
+    # print(len(train_generator.dataset), len(val_generator.dataset), len(test_generator.dataset))
     args.num_humans = train_generator.dataset[0][0].shape[1]
     args.feat_dim = train_generator.dataset[0][0].shape[-1]
 
@@ -94,8 +89,8 @@ def main(args):
     n_params = get_n_params(model)
     print('# parameters: {}'.format(n_params))
     
-    graph_acc = get_graph_accuracy(model, test_generator, args)
-    print('test graph_acc before trianing:', graph_acc)
+    acc_test = get_graph_accuracy(model, test_generator, args)
+    print('test acc_test before trianing:', acc_test)
     
     mse_val, ade_val, fde_val = evaluate(model, val_generator, args, scaling)
     print('(valid) MSE: {}, ADE: {}, FDE {}'.format(mse_val, ade_val, fde_val))
@@ -103,14 +98,10 @@ def main(args):
     mse_test, ade_test, fde_test = evaluate(model, test_generator, args, scaling)
     print('(test) MSE: {}, ADE: {}, FDE {}'.format(mse_test, ade_test, fde_test))
 
-    loss_fn = torch.nn.MSELoss()
-    kl_loss_fn = torch.nn.KLDivLoss(reduction='batchmean')
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)
     best_epoch = -1
     best_val_loss = 1e9
-    test_acc = -1
-    dataset_size = len(train_generator.dataset)
 
     if args.plt:
         for skip_first in range(args.edge_types-1, -1, -1):
@@ -118,9 +109,7 @@ def main(args):
             scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)
             best_epoch = -1
             best_val_loss = 1e9
-            test_acc = -1
-            dataset_size = len(train_generator.dataset)
-            # training layer "skip_first"
+
             model.rnn_decoder.skip_first = skip_first
             model.alpha = 0.
             for jj in range(skip_first+1, args.edge_types):
@@ -135,7 +124,7 @@ def main(args):
                 if args.plt:
                     model.alpha = min(1, (epoch+1) / 500)
                 optimizer.zero_grad()
-                for batch_data, batch_label in train_generator:
+                for batch_data, batch_label, *other_labels in train_generator:
                     batch_graph = None
                     batch_data = batch_data.to(device)
                     batch_label = batch_label.to(device)
@@ -160,8 +149,8 @@ def main(args):
                         print('alpha {:.3f}'.format(model.alpha))
                     
 
-                    graph_acc = get_graph_accuracy(model, test_generator, args)
-                    print('test graph_acc before trianing:', graph_acc)
+                    acc_test = get_graph_accuracy(model, test_generator, args)
+                    print('test acc_test before trianing:', acc_test)
 
                     mse_val, ade_val, fde_val = evaluate(model, val_generator, args, scaling)
                     print('(valid) MSE: {}, ADE: {}, FDE {}'.format(mse_val, ade_val, fde_val))
@@ -171,7 +160,7 @@ def main(args):
 
                     if args.use_wandb:
                         logs = {'epoch': epoch,
-                                'graph_accuracy': graph_acc,
+                                'graph_accuracy': acc_test,
                                 'val_mse': mse_val,
                                 'val_ade': ade_val,
                                 'val_fde': fde_val,
@@ -193,6 +182,10 @@ def main(args):
                         torch.save(model.state_dict(), weights_saved_name)
                         best_epoch = epoch
                         mse_test, ade_test, fde_test = evaluate(model, test_generator, args, scaling)
+
+                        print_logs(epoch, 'test', acc_test, mse_test, ade_test, fde_test, outfile=log)
+                        log.flush()
+
                     elif epoch - best_epoch > 5:
                         scheduler.step()
                         print('learning rate', scheduler.get_last_lr())
@@ -206,7 +199,7 @@ def main(args):
             tot_kl_loss = 0.
             tot_l1_loss = 0.
             optimizer.zero_grad()
-            for batch_data, batch_label in train_generator:
+            for batch_data, batch_label, *other_labels in train_generator:
                 batch_graph = None
                 batch_data = batch_data.to(device)
                 batch_label = batch_label.to(device)
@@ -228,8 +221,8 @@ def main(args):
                 if args.kl:
                     print('kl loss {:.3f}'.format(tot_kl_loss))
 
-                graph_acc = get_graph_accuracy(model, test_generator, args)
-                print('test graph_acc before trianing:', graph_acc)
+                acc_test = get_graph_accuracy(model, test_generator, args)
+                print('test acc_test before trianing:', acc_test)
 
                 mse_val, ade_val, fde_val = evaluate(model, val_generator, args, scaling)
                 print('(valid) MSE: {}, ADE: {}, FDE {}'.format(mse_val, ade_val, fde_val))
@@ -239,7 +232,7 @@ def main(args):
 
                 if args.use_wandb:
                     logs = {'epoch': epoch,
-                            'graph_accuracy': graph_acc,
+                            'graph_accuracy': acc_test,
                             'val_mse': mse_val,
                             'val_ade': ade_val,
                             'val_fde': fde_val,
@@ -274,8 +267,8 @@ def main(args):
         mutual_info_score = get_mutual_info_score(model, test_generator, args)
         print('mutual info score: {:.4f}'.format(mutual_info_score))
 
-    graph_acc = get_graph_accuracy(model, test_generator, args)
-    print('test graph accuracy', np.max(graph_acc))
+    acc_test = get_graph_accuracy(model, test_generator, args)
+    print('test graph accuracy', np.max(acc_test))
     
     mse_test, ade_test, fde_test = evaluate(model, test_generator, args, scaling)
     
@@ -302,17 +295,14 @@ def main(args):
                 args.randomseed,
                 args.hidden_dim,
                 n_params,
-                np.max(graph_acc),
+                np.max(acc_test),
                 test_supervised_acc,
                 test_loss_str))
 
-    if args.visualize:
-        from visualization import quick_visualization
-        quick_visualization(model, test_generator, args)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Parse configuration file')
-    parser.add_argument('--env', type=str, choices=['socialnav', 'phase', 'bball'])
+    parser.add_argument('--env', type=str, choices=['bball', 'springs5'])
     parser.add_argument('--dataset_path', type=str, default='')
     parser.add_argument('--model', type=str, default='gat')
     parser.add_argument('--obs_frames', type=int, default=40)
