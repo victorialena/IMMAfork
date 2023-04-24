@@ -188,7 +188,11 @@ def prepare_dataset(args):
         all_labels = torch.FloatTensor(all_labels)
 
     elif args.env == 'bball':
-        all_data = np.load('./datasets/all_data.npz.npy')
+        if not args.long_term:
+            all_data = np.load('./datasets/all_data.npz.npy')
+        else:
+            all_data = np.load('./datasets/long_horizon_all_data.npy')
+            all_data = all_data[:, ::2]
 
         x_min, x_max = all_data[:, :, :, 0].min(), all_data[:, :, :, 0].max()
         y_min, y_max = all_data[:, :, :, 1].min(), all_data[:, :, :, 1].max()

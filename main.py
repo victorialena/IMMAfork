@@ -345,9 +345,10 @@ if __name__ == '__main__':
     parser.add_argument('--test_after_every_eval', default=False, action='store_true')
     parser.add_argument('--randomseed', type=int, default=42)
     parser.add_argument('--max_epoch', type=int, default=1499)
-    parser.add_argument('--num_epoch', type=int, default=1000000000)
+    parser.add_argument('--num_epoch', type=int, default=10000)
     parser.add_argument('--log_file', type=str, default='./results.log')
     parser.add_argument('--dataset_size', type=int, default=300000)
+    parser.add_argument('--long_term', default=False, action='store_true')
 
     args = parser.parse_args()
     print(args)
