@@ -63,7 +63,7 @@ def get_graph_accuracy(model, generator, args):
 
     model.eval()
     acc = []
-    loss_fn = lambda x, y : torch.mean(x==y).item() #torch.nn.BCELoss()
+    loss_fn = torch.nn.BCEWithLogitsLoss() #lambda x, y : torch.nn.BCEWithLogitsLoss(x, y) # torch.mean(x==y).item() #
 
     with torch.no_grad():
         for iidx, (batch_data, _, gt_graphs) in tqdm(enumerate(generator)):
@@ -77,9 +77,8 @@ def get_graph_accuracy(model, generator, args):
             preds = model.multistep_forward(batch_data, batch_graph, 1)
             predicted_graphs = preds[0][0][0].to(float)
             mask = torch.ones(N, N) - torch.eye(N) == True
-            pdb.set_trace()
             for g, gt in zip(predicted_graphs, gt_graphs):
-                acc.append(loss_fn(torch.sigmoid(g.flatten()), gt[mask]).item())
+                acc.append(loss_fn(g.flatten(), gt[mask]).item())
 
     return np.mean(acc)
 
