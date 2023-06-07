@@ -28,10 +28,13 @@ def prepare_dataset(args):
         all_data[..., 5:, 3] = 1.
         all_data[..., -1, 2:] = 1.
         all_data = all_data[:args.dataset_size, ...]
-
+        gt_edges = np.ones((args.dataset_size, 11, 11))
+        gt_edges[:, np.arange(11), np.arange(11)] = 0
+        gt_edges = torch.FloatTensor(gt_edges)
+    
     elif args.env == 'springs5':
         all_data = np.moveaxis(np.load('./datasets/springs5_all_data.npy'), 1, 2)
-        gt_egdes = torch.FloatTensor(np.load('./datasets/springs5_edges.npy'))
+        gt_edges = torch.FloatTensor(np.load('./datasets/springs5_edges.npy'))
     else:
         assert False
 
@@ -48,12 +51,11 @@ def prepare_dataset(args):
     # print('loaded all_data:', all_data.size(0))
     # print('data shape', all_data.shape)
     # print('labels shape', all_labels.shape)
-
-    dataset = torch.utils.data.TensorDataset(all_data, all_labels, gt_egdes) # create your dataset
+    dataset = torch.utils.data.TensorDataset(all_data, all_labels, gt_edges) # create your dataset
 
     torch.cuda.manual_seed_all(args.randomseed)
     torch.manual_seed(args.randomseed)
-    train_dataset, val_dataset, test_dataset = split_fn(dataset, args.env == 'bball')
+    train_dataset, val_dataset, test_dataset = split_fn(dataset, False) # args.env == 'bball')
 
     # Parameters
     params = {'batch_size': 64,
