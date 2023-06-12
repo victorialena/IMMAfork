@@ -302,7 +302,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Parse configuration file')
-    parser.add_argument('--env', type=str, choices=['bball', 'springs5'])
+    parser.add_argument('--env', type=str, choices=['bball', 'springs5', 'motion'])
     parser.add_argument('--dataset_path', type=str, default='')
     parser.add_argument('--model', type=str, default='gat')
     parser.add_argument('--obs_frames', type=int, default=40)

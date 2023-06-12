@@ -32,6 +32,14 @@ def prepare_dataset(args):
     elif args.env == 'springs5':
         all_data = np.moveaxis(np.load('./datasets/springs5_all_data.npy'), 1, 2)
         gt_egdes = torch.FloatTensor(np.load('./datasets/springs5_edges.npy'))
+    elif args.env == 'motion':
+        all_data = np.load('./datasets/motion_features.npy')
+        src, dst = np.load('./datasets/motion_edges.npy').T
+
+        batch_sz, T, NUM_JOINTS, d = all_data.shape
+        all_edges = torch.zeros((NUM_JOINTS, NUM_JOINTS))
+        all_edges[src, dst] = 1
+        all_edges = all_edges.repeat(batch_sz, 1, 1)
     else:
         assert False
 
