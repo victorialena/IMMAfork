@@ -40,9 +40,9 @@ def prepare_dataset(args):
         src, dst = np.load('./datasets/motion_edges.npy').T
 
         batch_sz, T, NUM_JOINTS, d = all_data.shape
-        all_edges = torch.zeros((NUM_JOINTS, NUM_JOINTS))
-        all_edges[src, dst] = 1
-        all_edges = all_edges.repeat(batch_sz, 1, 1)
+        gt_edges = torch.zeros((NUM_JOINTS, NUM_JOINTS))
+        gt_edges[src, dst] = 1
+        gt_edges = gt_edges.repeat(batch_sz, 1, 1)
     else:
         assert False
 
