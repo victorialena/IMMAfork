@@ -5,7 +5,7 @@ model=imma
 obs_frames=40
 randomseed=42
 hidden_dim=256
-edge_types=5
+edge_types=2 #5
 
 # python main.py --env $env --model $model --randomseed $randomseed \
 #                --obs_frames $obs_frames --rollouts 10 --edge_types $edge_types \
