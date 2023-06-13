@@ -70,7 +70,7 @@ def prepare_dataset(args):
               'shuffle': True,
               'num_workers': 1,
               'pin_memory': False,
-              'drop_last': True,
+              'drop_last': False,
               }
     train_generator = torch.utils.data.DataLoader(train_dataset, **params)
     val_generator = torch.utils.data.DataLoader(val_dataset, **params)

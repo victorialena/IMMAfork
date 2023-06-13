@@ -41,7 +41,8 @@ def evaluate(model, generator, args, scaling=None):
                 preds[i][-1][..., 0] = (preds[i][-1][..., 0] * (x_max - x_min) + x_min) * constant
                 preds[i][-1][..., 1] = (preds[i][-1][..., 1] * (y_max - y_min) + y_min) * constant
 
-        _preds, _labels = torch.stack([p[-1] for p in preds]).transpose(0,1)[..., :2], batch_label[..., :2]
+        # TODO: remove this hack (i.e, _labels=batch_label[..., :2])
+        _preds, _labels = torch.stack([p[-1] for p in preds]).transpose(0,1)[..., :2], batch_label[:, 1:, :, :2]
 
         mse.append(F.mse_loss(_preds, _labels).item())
         ade.append(min_ade(_preds, _labels).item())
