@@ -25,6 +25,7 @@ parser.add_argument('--obs_frames', type=int, default=40)
 parser.add_argument('--input_size', type=int, default=4)
 parser.add_argument('--randomseed', type=int, default=42)
 parser.add_argument('--num_vars', type=int, default=5)
+parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--prediction_steps', type=int, default=9, metavar='N', help='Num steps to predict before re-using teacher forcing.')
 
 
