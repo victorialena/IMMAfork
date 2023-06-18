@@ -15,6 +15,7 @@ from utils import get_output_dir, print_logs
 
 from prepare_dataset import prepare_dataset
 from losses import calc_loss, min_ade, min_fde
+from utils import unnormalize
 
 def evaluate(model, generator, args, scaling=None):
     device = args.device
@@ -34,12 +35,21 @@ def evaluate(model, generator, args, scaling=None):
             preds = model.multistep_forward(batch_data[:, -args.obs_frames:, ...], 
                                             batch_graph, args.rollouts)
         if scaling:
-            constant = 0.3048 if args.env == 'bball' else 1.
-            for i in range(args.rollouts):
-                batch_label[:, i, ..., 0] = (batch_label[:, i, ..., 0] * (x_max - x_min) + x_min) * constant
-                batch_label[:, i, ..., 1] = (batch_label[:, i, ..., 1] * (y_max - y_min) + y_min) * constant
-                preds[i][-1][..., 0] = (preds[i][-1][..., 0] * (x_max - x_min) + x_min) * constant
-                preds[i][-1][..., 1] = (preds[i][-1][..., 1] * (y_max - y_min) + y_min) * constant
+            idx = batch_label.shape[-1]//2
+            if args.env.startswith('motion'):
+                for i in range(args.rollouts):
+                    batch_label[:, i, ..., :idx] = unnormalize(batch_label[:, i, ..., :idx], x_max, x_min)
+                    batch_label[:, i, ..., idx:] = unnormalize(batch_label[:, i, ..., idx:], y_max, y_min)
+                    preds[i][-1][..., :idx] = unnormalize(preds[i][-1][..., :idx], x_max, x_min)
+                    preds[i][-1][..., idx:] = unnormalize(preds[i][-1][..., idx:], y_max, y_min)
+
+            else:
+                constant = 0.3048 if args.env == 'bball' else 1.
+                for i in range(args.rollouts):
+                    batch_label[:, i, ..., 0] = (batch_label[:, i, ..., 0] * (x_max - x_min) + x_min) * constant
+                    batch_label[:, i, ..., 1] = (batch_label[:, i, ..., 1] * (y_max - y_min) + y_min) * constant
+                    preds[i][-1][..., 0] = (preds[i][-1][..., 0] * (x_max - x_min) + x_min) * constant
+                    preds[i][-1][..., 1] = (preds[i][-1][..., 1] * (y_max - y_min) + y_min) * constant
 
         # TODO: remove this hack (i.e, _labels=batch_label[..., :2])
         _preds, _labels = torch.stack([p[-1] for p in preds]).transpose(0,1)[..., :2], batch_label[:, 1:, :, :2]

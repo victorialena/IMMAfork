@@ -13,6 +13,10 @@ from datetime import date
 import sys
 
 
+def unnormalize(data, data_max, data_min):
+    return (data + 1) * (data_max - data_min) / 2. + data_min
+
+
 def get_device(args):
     if args.gpu != -1:
         return torch.device("cuda:{}".format(args.gpu) if torch.cuda.is_available() else "cpu")

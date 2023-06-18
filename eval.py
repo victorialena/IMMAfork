@@ -10,6 +10,7 @@ from tqdm import tqdm
 import pdb
 from prepare_dataset import prepare_dataset
 from losses import fde, kmin_ade, argsort_kade
+from utils import unnormalize
 
 from models.imma import IMMA
 
@@ -26,9 +27,6 @@ parser.add_argument('--randomseed', type=int, default=42)
 parser.add_argument('--num_vars', type=int, default=5)
 parser.add_argument('--prediction_steps', type=int, default=9, metavar='N', help='Num steps to predict before re-using teacher forcing.')
 
-
-def unnormalize(data, data_max, data_min):
-    return (data + 1) * (data_max - data_min) / 2. + data_min
 
 
 def print_test_logs(suffix, mse_log, ade_log, fde_log, outfile=sys.stdout):
