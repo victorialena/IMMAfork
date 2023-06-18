@@ -16,25 +16,26 @@ def split_fn(dataset, random):
             torch.utils.data.Subset(dataset, range(train_size, train_size+val_size)),
             torch.utils.data.Subset(dataset, range(train_size+val_size, train_size+val_size+test_size)))
 
+dataset_size=100000
 
 def prepare_dataset(args):
     if args.env == 'bball':
-        if not args.long_term:
-            all_data = np.load('./datasets/short_horizon_all_data.npy')
-        else:
-            all_data = np.load('./datasets/long_horizon_all_data.npy')
-            all_data = all_data[:, ::2]
+        all_data = np.load('./datasets/long_horizon_all_data.npy')
+        all_data = all_data[:, ::2]
 
         all_data[..., 5:, 3] = 1.
         all_data[..., -1, 2:] = 1.
-        all_data = all_data[:args.dataset_size, ...]
-        gt_edges = np.ones((args.dataset_size, 11, 11))
+        all_data = all_data[:dataset_size, ...]
+        gt_edges = np.ones((dataset_size, 11, 11))
         gt_edges[:, np.arange(11), np.arange(11)] = 0
         gt_edges = torch.FloatTensor(gt_edges)
+        idx = 2
     
     elif args.env == 'springs5':
         all_data = np.moveaxis(np.load('./datasets/springs5_all_data.npy'), 1, 2)
         gt_edges = torch.FloatTensor(np.load('./datasets/springs5_edges.npy'))
+        idx = 2
+
     elif args.env == 'motion':
         all_data = np.load('./datasets/motion_features.npy')
         src, dst = np.load('./datasets/motion_edges.npy').T
@@ -43,14 +44,15 @@ def prepare_dataset(args):
         gt_edges = torch.zeros((NUM_JOINTS, NUM_JOINTS))
         gt_edges[src, dst] = 1
         gt_edges = gt_edges.repeat(batch_sz, 1, 1)
+        idx = 3
     else:
         assert False
 
-    x_min, x_max = all_data[:, :, :, 0].min(), all_data[:, :, :, 0].max()
-    y_min, y_max = all_data[:, :, :, 1].min(), all_data[:, :, :, 1].max()
-    scaling = [x_max, x_min, y_max, y_min]
-    all_data[..., 0] = (all_data[..., 0] - x_min)/(x_max - x_min)
-    all_data[..., 1] = (all_data[..., 1] - y_min)/(y_max - y_min)
+    x_min, x_max = all_data[:, :, :, :idx].min(), all_data[:, :, :, :idx].max()
+    v_min, v_max = all_data[:, :, :, idx:].min(), all_data[:, :, :, idx:].max()
+    scaling = [x_max, x_min, v_max, v_min]
+    all_data[..., :idx] = (all_data[..., :idx] - x_min)/(x_max - x_min)
+    all_data[..., idx:] = (all_data[..., idx:] - v_min)/(v_max - v_min)
 
     all_data, all_labels = all_data[:, :args.obs_frames, :, :], all_data[:, args.obs_frames:, :, :]
     all_data = torch.FloatTensor(all_data)

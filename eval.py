@@ -23,6 +23,7 @@ parser.add_argument('--timesteps', type=int, default=50)
 parser.add_argument('--obs_frames', type=int, default=40)
 parser.add_argument('--input_size', type=int, default=4)
 parser.add_argument('--randomseed', type=int, default=42)
+parser.add_argument('--num_vars', type=int, default=5)
 parser.add_argument('--prediction_steps', type=int, default=9, metavar='N', help='Num steps to predict before re-using teacher forcing.')
 
 
@@ -38,7 +39,6 @@ def print_test_logs(suffix, mse_log, ade_log, fde_log, outfile=sys.stdout):
 
 def test_k(k=20, print_id=None, save_plot=False, save_csv=True):
     model.eval()
-    # model.load(model_folder)
     
     mse_test = []
     ade_test = []
@@ -52,14 +52,12 @@ def test_k(k=20, print_id=None, save_plot=False, save_csv=True):
         for _ in range(k):
             output = model.multistep_forward(batch_data, None, args.prediction_steps)
             output = torch.stack([p[-1] for p in output]).transpose(0,1)
-            # pdb.set_trace()
             all_preds.append(output)
 
         all_preds = torch.stack(all_preds, dim=0)
-        pdb.set_trace()
 
         # undo preprocessing
-        _output, _target = all_preds[..., :half_dims], batch_label[..., :half_dims]
+        _output, _target = all_preds[..., :half_dims], batch_label[:, :args.prediction_steps, :, :half_dims]
 
         if args.env == 'nba':
             _output[..., 0] = unnormalize(_output[..., 0], loc_max, loc_min)
@@ -108,19 +106,23 @@ def test_k(k=20, print_id=None, save_plot=False, save_csv=True):
                 
             if save_csv:
                 indices = argsort_kade(_output, _target)[:, print_id[1]]
-                # T = args.prediction_steps
-                plot_target = _target[print_id[1]].moveaxis(0, 1)
-                plot_target = plot_target.reshape(plot_target.size(0), -1).cpu().numpy()
+                _output = torch.cat((batch_data[..., :half_dims].repeat(k, 1, 1, 1, 1), _output), dim=2)
+                _target = torch.cat((batch_data[..., :half_dims], _target), dim=1)
 
-                column_names = [_+str(i) for i in range(args.num_vars) for _ in ['x', 'y', 'z']]
+                # T = args.prediction_steps
+                plot_target = _target[print_id[1]]
+                plot_target = plot_target.reshape(plot_target.size(0), -1).cpu().numpy()
+                
+                column_names = ['x', 'y'] if half_dims==2 else ['x', 'y', 'z']
+                column_names = [_+str(i) for i in range(args.num_vars) for _ in column_names]
                 df = pd.DataFrame(plot_target,
-                                columns = [_+'_gt' for _ in column_names])
+                                  columns = [_+'_gt' for _ in column_names])
                 
                 for i in indices:
-                    traj = _output[i, print_id[1]].moveaxis(0, 1)
+                    traj = _output[i, print_id[1]]
                     traj = traj.reshape(traj.size(0), -1).cpu().numpy()
                     _df = pd.DataFrame(traj,
-                                    columns = [_+'_'+str(i.item()) for _ in column_names])
+                                       columns = [_+'_'+str(i.item()) for _ in column_names])
                     df = df.join(_df)
 
                 df.to_csv(args.output_dir+'/IMMA_'+args.env+'.csv')
@@ -144,12 +146,9 @@ def test_k(k=20, print_id=None, save_plot=False, save_csv=True):
 args = parser.parse_args()
 half_dims = args.input_size//2
 
-# model = IMMA(args)
-
 model_saved_name = '{}/best_model.pth'.format(args.output_dir)
 model = torch.load(model_saved_name)
 
 train_loader, valid_loader, test_loader, (loc_max, loc_min, vel_max, vel_min) = prepare_dataset(args)
-pdb.set_trace()
 with torch.no_grad():
-    test_k()
+    test_k(print_id=None) # nba (156, 2))# spring (35, 53))
