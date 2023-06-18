@@ -5,6 +5,37 @@ import torch.nn.functional as F
 from utils import logsumexp
 
 
+def k_ade(recons, target):
+    """ ADE = 1/T * sum(sqrt(dx_i^2 + dy_i^2))
+        |target| = [bs, T, n_vars, d]
+        |recons| = [k, bs, T, n_vars, d]
+    """
+    assert recons.dim() == 5
+    assert target.dim() == 4
+    return torch.pow(target.unsqueeze(0)-recons, 2).sum(-1).sqrt().mean(-2).mean(-1)
+
+def argsort_kade(recons, target):
+    ade = k_ade(recons, target)
+    return torch.argsort(ade, dim=0)
+
+
+def fde(target, recons, argmin=False):
+    """ FDE = sqrt(dx_T^2 + dy_T^2)
+        |target| = [bs, T, n_vars, d]
+    """
+    assert target.dim() == 4
+    return torch.pow(target[:, -1]-recons[:, -1], 2).sum(-1).sqrt().mean(-1)
+
+def kmin_ade(recons, target, reduce=None, return_indices=False):
+    ade = k_ade(recons, target)
+
+    if reduce is None:
+        if return_indices:
+            return ade.min(0)
+        return ade.min(0).values
+    return reduce(ade.min(0).values)
+
+
 def min_ade(target, recons):
     """ ADE = 1/T * sum(sqrt(dx_i^2 + dy_i^2))
         |target| = [bs, T, n_vars, d]
