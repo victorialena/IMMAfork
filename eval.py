@@ -29,6 +29,13 @@ parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--prediction_steps', type=int, default=9, metavar='N', help='Num steps to predict before re-using teacher forcing.')
 
 
+class RMSELoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.mse = nn.MSELoss(reduction='none')
+        
+    def forward(self,yhat,y):
+        return torch.sqrt(self.mse(yhat,y).mean(-1).mean(-1).mean(-1))
 
 def print_test_logs(suffix, mse_log, ade_log, fde_log, outfile=sys.stdout):
     print('mse_'+suffix+': {:.10f}'.format(np.mean(mse_log)),
@@ -39,9 +46,12 @@ def print_test_logs(suffix, mse_log, ade_log, fde_log, outfile=sys.stdout):
 def test_k(k=20, print_id=None, save_plot=False, save_csv=True):
     model.eval()
     
-    mse_test = []
     ade_test = []
     fde_test = []
+    mse_test = []
+
+    rmse = RMSELoss()
+    rmse_test = []
 
     for batch_idx, (batch_data, batch_label, *other_labels) in enumerate(test_loader):
         batch_data = batch_data.cuda()
@@ -72,12 +82,14 @@ def test_k(k=20, print_id=None, save_plot=False, save_csv=True):
             _output = unnormalize(_output, loc_max, loc_min)
             _target = unnormalize(_target, loc_max, loc_min)
 
-        # pdb.set_trace()
         ade_values, ade_idx = kmin_ade(_output, _target, return_indices=True)
         ade_test.extend(ade_values)
+
         min_output = _output[ade_idx, range(_output.shape[1])] #args.batch_size)]
-        mse_test.extend(F.mse_loss(min_output, _target, reduction='none').mean(-1).mean(-1))
         fde_test.extend(fde(min_output, _target))
+        mse_test.extend(F.mse_loss(min_output, _target, reduction='none').mean(-1).mean(-1).mean(-1))
+        tmp = [rmse(out, _target) for out in _output]
+        rmse_test.append(torch.stack(tmp).T)
         
         if (print_id is not None) and (print_id[0] == batch_idx):
 
@@ -126,11 +138,12 @@ def test_k(k=20, print_id=None, save_plot=False, save_csv=True):
 
                 df.to_csv(args.output_dir+'/IMMA_'+args.env+'.csv')
 
-            break
+            # break
 
     mse_test = torch.stack(mse_test).cpu().numpy()
     ade_test = torch.stack(ade_test).cpu().numpy()
     fde_test = torch.stack(fde_test).cpu().numpy()
+    rmse_test = torch.concat(rmse_test).cpu().numpy()
 
     idx = np.argmin(ade_test)
     batch_size = _target.shape[0]
@@ -139,6 +152,7 @@ def test_k(k=20, print_id=None, save_plot=False, save_csv=True):
     print('<-----------------Testing----------------->')
     print('BEST SAMPLE: (batch)', batch_id, '(sample)', sample_id)
     print_test_logs('test', mse_test, ade_test, fde_test)
+    print('RMSE (std)', rmse_test.std(axis=1).mean().item(), '(mean)', rmse_test.mean(axis=1).mean().item())
 
 
 

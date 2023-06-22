@@ -14,7 +14,8 @@ import sys
 
 
 def unnormalize(data, data_max, data_min):
-    return (data + 1) * (data_max - data_min) / 2. + data_min
+    return data * (data_max - data_min) + data_min
+    # return (data + 1) * (data_max - data_min) / 2. + data_min
 
 
 def get_device(args):

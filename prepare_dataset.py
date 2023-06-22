@@ -48,11 +48,14 @@ def prepare_dataset(args):
     else:
         assert False
 
-    x_min, x_max = all_data[:, :, :, :idx].min(), all_data[:, :, :, :idx].max()
-    v_min, v_max = all_data[:, :, :, idx:].min(), all_data[:, :, :, idx:].max()
-    scaling = [x_max, x_min, v_max, v_min]
-    all_data[..., :idx] = (all_data[..., :idx] - x_min)/(x_max - x_min)
-    all_data[..., idx:] = (all_data[..., idx:] - v_min)/(v_max - v_min)
+    if args.normalize:
+        x_min, x_max = all_data[:, :, :, :idx].min(), all_data[:, :, :, :idx].max()
+        v_min, v_max = all_data[:, :, :, idx:].min(), all_data[:, :, :, idx:].max()
+        scaling = [x_max, x_min, v_max, v_min]
+        all_data[..., :idx] = (all_data[..., :idx] - x_min)/(x_max - x_min)
+        all_data[..., idx:] = (all_data[..., idx:] - v_min)/(v_max - v_min)
+    else:
+        scaling = None
 
     all_data, all_labels = all_data[:, :args.obs_frames, :, :], all_data[:, args.obs_frames:, :, :]
     all_data = torch.FloatTensor(all_data)

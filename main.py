@@ -335,6 +335,7 @@ if __name__ == '__main__':
     parser.add_argument('--randomize', default=False, action='store_true')
     parser.add_argument('--window_size', default=6, type=int)
     parser.add_argument('--edge_types', default=2, type=int)
+    parser.add_argument('--normalize', default=False, action='store_true')
 
     parser.add_argument('--project_name', type=str, default='MFCrowdSim')
     parser.add_argument('--policy', type=str, default='model_predictive_rl')
