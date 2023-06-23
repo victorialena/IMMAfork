@@ -57,7 +57,7 @@ def prepare_dataset(args):
     else:
         scaling = None
 
-    all_data, all_labels = all_data[:, :args.obs_frames, :, :], all_data[:, args.obs_frames:args.obs_frames+args.rollouts+1, :, :]
+    all_data, all_labels = all_data[:, :args.obs_frames, :, :], all_data[:, args.obs_frames:args.obs_frames+args.rollouts, :, :]
     all_data = torch.FloatTensor(all_data)
     all_labels = torch.FloatTensor(all_labels)
     
